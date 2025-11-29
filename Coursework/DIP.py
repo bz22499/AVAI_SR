@@ -37,13 +37,13 @@ print(f"Running on device: {device}")
 
 
 # upsampling factor. Set to 1.0 for x8, 0.5 for x16
-LR_RESIZE_FACTOR = 0.5
+LR_RESIZE_FACTOR = 1.0
 
 # noise level for AWGN added to LR image. Set to 0, 25, or 50
-NOISE_SIGMA = 0
+NOISE_SIGMA = 50
 
 # limit number of images to process (set to None for all)
-MAX_IMAGES = 3
+MAX_IMAGES = 5
 
 
 # Get LR dataset and HR dataset (for ground truths)

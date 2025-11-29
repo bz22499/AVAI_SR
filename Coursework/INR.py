@@ -33,13 +33,13 @@ print(f"Running on device: {device}")
 
 
 # upsampling factor. Set to 0.5 for x16 (relative to x8), 1.0 for x8.
-LR_RESIZE_FACTOR = 0.5
+LR_RESIZE_FACTOR = 1.0
 
 # noise level for AWGN added to LR image. Set to 0, 25, or 50
 NOISE_SIGMA = 0
 
 # limit number of images to process (set to None for all)
-MAX_IMAGES = 3
+MAX_IMAGES = 5
 
 
 class DIV2KDataset(Dataset):
