@@ -227,8 +227,6 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
             optimizer_zssr.zero_grad()
             loss.backward()
             optimizer_zssr.step()
-
-            loss_history.append(loss.item())
             
             epoch_loss += loss.item()
         
