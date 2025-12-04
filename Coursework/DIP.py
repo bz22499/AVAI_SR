@@ -42,7 +42,7 @@ LR_RESIZE_FACTOR = 1.0
 NOISE_SIGMA = 50
 
 # limit number of images to process (set to None for all)
-MAX_IMAGES = 8
+MAX_IMAGES = NONE
 
 
 # Get LR dataset and HR dataset (for ground truths)
@@ -99,18 +99,18 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     print(f"\nProcessing Image {img_idx+1}/{len(val_dataset)}")
     
     # convert from [C, H,W] to [1, C, H, W] and move to GPU
-    img_LR_var = img_LR_tensor.to(device)
-    img_HR_var = img_HR_tensor.to(device)
+    img_LR = img_LR_tensor.to(device)
+    img_HR = img_HR_tensor.to(device)
 
-    print(f"HR Image Shape: {img_HR_var.shape}")
-    print(f"LR Input Shape: {img_LR_var.shape}")
+    print(f"HR Image Shape: {img_HR.shape}")
+    print(f"LR Input Shape: {img_LR.shape}")
 
 
     # resize the LR image ( x8, x16)
     if LR_RESIZE_FACTOR != 1.0:
         print(f"Resizing LR Image by factor {LR_RESIZE_FACTOR}")
-        img_LR_var = torch.nn.functional.interpolate(
-            img_LR_var, 
+        img_LR = torch.nn.functional.interpolate(
+            img_LR, 
             scale_factor=LR_RESIZE_FACTOR, 
             mode='bicubic', 
             align_corners=True
@@ -122,11 +122,11 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     if NOISE_SIGMA > 0:
         print(f"Adding Noise (Sigma={NOISE_SIGMA})")
         sigma = NOISE_SIGMA / 255.0
-        noise = torch.randn_like(img_LR_var) * sigma
-        img_LR_var = img_LR_var + noise
-        img_LR_var = torch.clamp(img_LR_var, 0, 1)
+        noise = torch.randn_like(img_LR) * sigma
+        img_LR = img_LR + noise
+        img_LR = torch.clamp(img_LR, 0, 1)
 
-    print(f"Final Input LR Shape: {img_LR_var.shape}")
+    print(f"Final Input LR Shape: {img_LR.shape}")
 
 
     # Define network hyperparameters
@@ -149,7 +149,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     # Define input noise, z - dimensions of HR image
     
     # Generate fresh noise for each image in the loop
-    net_input = get_noise(input_depth, INPUT, (img_HR_var.shape[2], img_HR_var.shape[3])).type(dtype).detach()
+    net_input = get_noise(input_depth, INPUT, (img_HR.shape[2], img_HR.shape[3])).type(dtype).detach()
 
     print("Input noise shape:", net_input.shape)
 
@@ -209,11 +209,10 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
 
     # define closure function (runs once per iteration inside "optimize")
     def closure():
-        global i # Use global instead of nonlocal for script-level variables
+        global i
         
         # add noise to input for regularisation
         if reg_noise_std > 0:
-            # Note: We use net_input_saved from the outer scope
             net_input_active = net_input_saved + (noise.normal_() * reg_noise_std)
         else:
             net_input_active = net_input_saved
@@ -225,7 +224,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
         out_LR = degradation_operator(out_HR)
         
         # compare downsampled model output vs original lr input
-        total_loss = mse(out_LR, img_LR_var)
+        total_loss = mse(out_LR, img_LR)
         
         # backpropagate loss
         total_loss.backward()
@@ -243,7 +242,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     # get final result
     out_HR_final = np.clip(torch_to_np(net(net_input)), 0, 1)
 
-    img_HR_np = torch_to_np(img_HR_var)
+    img_HR_np = torch_to_np(img_HR)
 
     # PSNR
     mse_val = np.mean((img_HR_np - out_HR_final) ** 2)
@@ -261,7 +260,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     with torch.no_grad():
         final_lpips = loss_fn_lpips(
             net(net_input) * 2 - 1, 
-            img_HR_var * 2 - 1
+            img_HR * 2 - 1
         ).item()
     
     print(f"PSNR: {final_psnr:.2f} | SSIM: {final_ssim:.4f} | LPIPS: {final_lpips:.4f}")

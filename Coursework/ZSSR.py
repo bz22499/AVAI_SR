@@ -36,7 +36,7 @@ LR_RESIZE_FACTOR = 1.0
 NOISE_SIGMA = 0
 
 # limit number of images to process (set to None for all)
-MAX_IMAGES = 13
+MAX_IMAGES = NONE
 
 
 class DIV2KDataset(Dataset):
@@ -172,13 +172,13 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     print(f"\nProcessing Image {img_idx+1}/{len(val_dataset)}")
 
     # convert from [C, H,W] to [1, C, H, W] and move to GPU
-    img_LR_var = img_LR_tensor.to(device)
-    img_HR_var = img_HR_tensor.to(device)
+    img_LR = img_LR_tensor.to(device)
+    img_HR = img_HR_tensor.to(device)
 
     if LR_RESIZE_FACTOR != 1.0:
         print(f"Resizing LR Image by factor {LR_RESIZE_FACTOR}")
-        img_LR_var = F.interpolate(
-            img_LR_var, 
+        img_LR = F.interpolate(
+            img_LR, 
             scale_factor=LR_RESIZE_FACTOR, 
             mode='bicubic', 
             align_corners=False
@@ -195,12 +195,12 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     if NOISE_SIGMA > 0:
         print(f"Adding Noise (Sigma={NOISE_SIGMA})")
         sigma = NOISE_SIGMA / 255.0
-        noise = torch.randn_like(img_LR_var) * sigma
-        img_LR_var = img_LR_var + noise
-        img_LR_var = torch.clamp(img_LR_var, 0, 1)
+        noise = torch.randn_like(img_LR) * sigma
+        img_LR = img_LR + noise
+        img_LR = torch.clamp(img_LR, 0, 1)
 
-    print(f"Final Input LR Shape: {img_LR_var.shape}")
-    print(f"HR Image Shape: {img_HR_var.shape}")
+    print(f"Final Input LR Shape: {img_LR.shape}")
+    print(f"HR Image Shape: {img_HR.shape}")
 
     # zssr is per image 
     # initialise new model for each image
@@ -208,7 +208,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     optimizer_zssr = torch.optim.Adam(model_zssr.parameters(), lr=LEARNING_RATE)
     
     # create internal dataset from the specific LR image
-    zssr_ds = ZSSRInternalDataset(img_LR_var, num_samples=CROPS_PER_EPOCH)
+    zssr_ds = ZSSRInternalDataset(img_LR, num_samples=CROPS_PER_EPOCH)
     zssr_loader = DataLoader(zssr_ds, batch_size=16, shuffle=True)
     
     # Training Loop
@@ -241,7 +241,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     model_zssr.eval()
 
     with torch.no_grad():
-        current_img = img_LR_var
+        current_img = img_LR
         
         # 2x upscaling per pass
         for p in range(NUM_PASSES):
@@ -251,7 +251,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
         sr_final = current_img
         
         # resize output to match exact HR ground truth dimensions - handles rounding errors
-        target_h, target_w = img_HR_var.shape[2], img_HR_var.shape[3]
+        target_h, target_w = img_HR.shape[2], img_HR.shape[3]
         
         if sr_final.shape[2:] != (target_h, target_w):
             sr_final = F.interpolate(
@@ -265,7 +265,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
 
     # convert to numpy 
     sr_np = sr_final.squeeze(0).permute(1, 2, 0).cpu().numpy()
-    gt_np = img_HR_var.squeeze(0).permute(1, 2, 0).cpu().numpy()
+    gt_np = img_HR.squeeze(0).permute(1, 2, 0).cpu().numpy()
     
     # PSNR
     mse_val = np.mean((gt_np - sr_np) ** 2)
@@ -279,7 +279,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     # LPIPS expects (N, 3, H, W) in [-1, 1]
     with torch.no_grad():
         sr_tensor_lpips = sr_final * 2 - 1
-        gt_tensor_lpips = img_HR_var * 2 - 1
+        gt_tensor_lpips = img_HR * 2 - 1
         current_lpips = loss_fn_lpips(sr_tensor_lpips, gt_tensor_lpips).item()
     dataset_lpips.append(current_lpips)
 

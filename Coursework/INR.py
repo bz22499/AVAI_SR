@@ -1,5 +1,5 @@
 # Code inspired by Lab7_intro_to_INR colab notebook, https://github.com/UoB-CS-AVAI
-# uses the same network setup 
+# uses the exact same network setup 
 
 
 # %pip install torch torchvision pillow scikit-image lpips matplotlib 
@@ -43,7 +43,7 @@ LR_RESIZE_FACTOR = 1.0
 NOISE_SIGMA = 50
 
 # limit number of images to process (set to None for all)
-MAX_IMAGES = 13
+MAX_IMAGES = NONE
 
 
 class DIV2KDataset(Dataset):
@@ -204,14 +204,14 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     print(f"\nProcessing Image {img_idx+1}/{len(val_dataset)}")
 
     # convert from [C, H,W] to [1, C, H, W] and move to GPU
-    img_LR_var = img_LR_tensor.to(device)
-    img_HR_var = img_HR_tensor.to(device)
+    img_LR = img_LR_tensor.to(device)
+    img_HR = img_HR_tensor.to(device)
     
     # Apply Resize Factor ( x8, x16)
     if LR_RESIZE_FACTOR != 1.0:
         print(f"Resizing LR Image by factor {LR_RESIZE_FACTOR}")
-        img_LR_var = torch.nn.functional.interpolate(
-            img_LR_var, 
+        img_LR = torch.nn.functional.interpolate(
+            img_LR, 
             scale_factor=LR_RESIZE_FACTOR, 
             mode='bicubic', 
             align_corners=True
@@ -221,16 +221,16 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     if NOISE_SIGMA > 0:
         print(f"Adding Noise (Sigma={NOISE_SIGMA})")
         sigma = NOISE_SIGMA / 255.0
-        noise = torch.randn_like(img_LR_var) * sigma
-        img_LR_var = img_LR_var + noise
-        img_LR_var = torch.clamp(img_LR_var, 0, 1)
+        noise = torch.randn_like(img_LR) * sigma
+        img_LR = img_LR + noise
+        img_LR = torch.clamp(img_LR, 0, 1)
 
     # 1 get dimensions
-    _, c, lr_h, lr_w = img_LR_var.shape # lr image is [1, 3, H, W]
-    _, _, hr_h, hr_w = img_HR_var.shape
+    _, c, lr_h, lr_w = img_LR.shape # lr image is [1, 3, H, W]
+    _, _, hr_h, hr_w = img_HR.shape
     
-    print(f"HR Image Shape: {img_HR_var.shape}")
-    print(f"LR Input Shape: {img_LR_var.shape}")
+    print(f"HR Image Shape: {img_HR.shape}")
+    print(f"LR Input Shape: {img_LR.shape}")
 
     # 2 create coordinate grids (to use as the inputs)
     lr_coords = get_mgrid(lr_h, lr_w).to(device) # Inputs for training
@@ -240,8 +240,8 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
 
     # flatten image pixels to match list of coordinates.
     # permute to (H, W, C), then flatten to (N, 3) - i.e. a list of RGB values for each pixel coordinate
-    lr_pixels = img_LR_var.squeeze(0).permute(1, 2, 0).reshape(-1, 3)
-    hr_pixels = img_HR_var.squeeze(0).permute(1, 2, 0).reshape(-1, 3)
+    lr_pixels = img_LR.squeeze(0).permute(1, 2, 0).reshape(-1, 3)
+    hr_pixels = img_HR.squeeze(0).permute(1, 2, 0).reshape(-1, 3)
 
     # normalise from [0, 1] to [-1, 1]
     lr_pixels = (lr_pixels - 0.5) / 0.5
@@ -314,7 +314,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     sr_img = np.clip(sr_img, 0, 1)
 
     # get ground truth
-    gt_img = img_HR_var.squeeze(0).permute(1, 2, 0).cpu().numpy()
+    gt_img = img_HR.squeeze(0).permute(1, 2, 0).cpu().numpy()
 
     # PSNR
     mse_val = np.mean((gt_img - sr_img) ** 2)
@@ -340,8 +340,8 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
         # Ensure it is in [-1, 1] range properly
         sr_tensor = torch.clamp(sr_tensor, -1, 1)
         
-        gt_tensor = img_HR_var.clone() 
-        # img_HR_var is [0, 1], convert to [-1, 1]
+        gt_tensor = img_HR.clone() 
+        # img_HR is [0, 1], convert to [-1, 1]
         gt_tensor = gt_tensor * 2 - 1
         
         current_lpips = loss_fn_lpips(sr_tensor, gt_tensor).item()
