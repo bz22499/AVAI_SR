@@ -43,7 +43,7 @@ LR_RESIZE_FACTOR = 1.0
 NOISE_SIGMA = 50
 
 # limit number of images to process (set to None for all)
-MAX_IMAGES = NONE
+MAX_IMAGES = None
 
 
 class DIV2KDataset(Dataset):
