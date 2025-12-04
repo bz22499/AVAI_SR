@@ -1,3 +1,7 @@
+# Code inspired by Lab7_intro_to_INR colab notebook, https://github.com/UoB-CS-AVAI
+# uses the same network setup 
+
+
 # %pip install torch torchvision pillow scikit-image lpips matplotlib 
 
 import torch
@@ -36,10 +40,10 @@ print(f"Running on device: {device}")
 LR_RESIZE_FACTOR = 1.0
 
 # noise level for AWGN added to LR image. Set to 0, 25, or 50
-NOISE_SIGMA = 0
+NOISE_SIGMA = 50
 
 # limit number of images to process (set to None for all)
-MAX_IMAGES = 5
+MAX_IMAGES = 13
 
 
 class DIV2KDataset(Dataset):
@@ -257,6 +261,8 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     steps = 2000 # can be increased
     print("Starting training...")
 
+    loss_history = []
+
     for step in range(steps):
         # 1 input LR coordinates to model
         model_output, _ = model(lr_coords)
@@ -269,17 +275,36 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
         loss.backward()
         optim_inr.step()
 
+        loss_history.append(loss.item())
+
         if step % 200 == 0:
             print(f"Step {step}, Loss: {loss.item():.6f}")
 
-    
     print("Training Complete.")
 
     print("Upscaling")
 
     # query with HR coordinates
+    # with torch.no_grad():
+    #     sr_output, _ = model(hr_coords)
+
+    # had memory issues with above for large images, so do in chunks
+    model.eval()
+    chunk_size = 50000
+    predictions = []
+    
+    hr_coords = hr_coords.to(device) 
+    num_pixels = hr_coords.shape[0]
+    
     with torch.no_grad():
-        sr_output, _ = model(hr_coords)
+        for i in range(0, num_pixels, chunk_size):
+            batch_coords = hr_coords[i : i + chunk_size]
+            
+            batch_out, _ = model(batch_coords)
+            
+            predictions.append(batch_out)
+    
+    sr_output = torch.cat(predictions, dim=0)
 
     # reshape back to image format
     sr_img = sr_output.view(hr_h, hr_w, 3).cpu().numpy()
@@ -325,18 +350,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     print(f"Image Results: PSNR: {sr_psnr:.2f}, SSIM: {current_ssim:.4f}, LPIPS: {current_lpips:.4f}")
 
 # Print averaged results
-print("\n" + "="*40)
-print(f"VALIDATION COMPLETE")
-print(f"Processed {len(dataset_psnr)} images.")
-print("="*40)
+
 print(f"Average PSNR:  {np.mean(dataset_psnr):.2f} dB")
 print(f"Average SSIM:  {np.mean(dataset_ssim):.4f}")
 print(f"Average LPIPS: {np.mean(dataset_lpips):.4f}")
-print("="*40)
-
-
-plt.figure(figsize=(15, 5))
-plt.subplot(1, 3, 1); plt.title("LR Input"); plt.imshow(img_LR_var.squeeze(0).permute(1, 2, 0).cpu().numpy())
-plt.subplot(1, 3, 2); plt.title(f"INR Output ({dataset_psnr[-1]:.2f} dB)"); plt.imshow(sr_img)
-plt.subplot(1, 3, 3); plt.title("Ground Truth"); plt.imshow(gt_img)
-plt.show()

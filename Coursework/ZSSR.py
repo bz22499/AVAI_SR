@@ -1,8 +1,13 @@
+# Code inspired by the official github https://github.com/assafshocher/ZSSR
+
+
+
 # %pip install torch torchvision pillow scikit-image lpips matplotlib 
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as TF
+import torch.nn.functional as F
+import torchvision.transforms.functional as TF
 from torch.utils.data import Dataset, DataLoader
 import torch.optim as optim
 from torchvision import transforms
@@ -18,7 +23,6 @@ import os
 import math
 import random
 
-# Standard GPU check
 dtype = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Running on device: {device}")
@@ -26,13 +30,13 @@ print(f"Running on device: {device}")
 
 
 # upsampling factor. Set to 0.5 for x16 (relative to x8), 1.0 for x8.
-LR_RESIZE_FACTOR = 0.5
+LR_RESIZE_FACTOR = 1.0
 
 # noise level for AWGN added to LR image. Set to 0, 25, or 50
 NOISE_SIGMA = 0
 
 # limit number of images to process (set to None for all)
-MAX_IMAGES = 3
+MAX_IMAGES = 13
 
 
 class DIV2KDataset(Dataset):
@@ -64,15 +68,14 @@ val_dataset = DIV2KDataset(
 )
 
 
-EPOCHS = 15
+EPOCHS = 30
 CROPS_PER_EPOCH = 500   # Number of training examples extracted per epoch
 LEARNING_RATE = 0.0005
 
 
 def degradation(img_tensor, scale=0.5):
-    # downsamples an image by "scale" to create a lower-resolution version
-    # so the network can learn how to reverse the degradation
-    return TF.interpolate(
+    # downsamples an image by "scale" to create a lower-resolution version so the network can learn how to reverse the degradation
+    return F.interpolate(
         img_tensor,
         scale_factor=scale,
         mode='bicubic',
@@ -106,13 +109,13 @@ class ZSSRInternalDataset(Dataset):
         lr_crop = lr_crop.squeeze(0)
 
         # data augmentation
-        if random.random() > 0.5: # Horizontal Flip
+        if random.random() > 0.5:
             hr_crop = TF.hflip(hr_crop)
             lr_crop = TF.hflip(lr_crop)
-        if random.random() > 0.5: # Vertical Flip
+        if random.random() > 0.5:
             hr_crop = TF.vflip(hr_crop)
             lr_crop = TF.vflip(lr_crop)
-        if random.random() > 0.5: # 90-degree Rotation
+        if random.random() > 0.5:
             hr_crop = torch.rot90(hr_crop, 1, [1, 2])
             lr_crop = torch.rot90(lr_crop, 1, [1, 2])
 
@@ -122,7 +125,7 @@ class ZSSRNet(nn.Module):
     def __init__(self, channels=64):
         super(ZSSRNet, self).__init__()
         
-        # head
+        # head/input laeyr
         self.head = nn.Conv2d(3, channels, kernel_size=3, padding=1)
         
         # body "We use a simple, fully convolutional network, with 8 hidden layers"
@@ -132,12 +135,12 @@ class ZSSRNet(nn.Module):
             body_layers.append(nn.ReLU(inplace=True))
         self.body = nn.Sequential(*body_layers)
         
-        # tail (predicts residual, i.e. corrections)
+        # tail (predicts residuals/corrections)
         self.tail = nn.Conv2d(channels, 3, kernel_size=3, padding=1)
 
     def forward(self, x):
         # bicubic upsample - "base guess" is direct upsampling - this will be blurry but we can learn improvements
-        x_upscaled = TF.interpolate(x, scale_factor=2, mode='bicubic', align_corners=False)
+        x_upscaled = F.interpolate(x, scale_factor=2, mode='bicubic', align_corners=False)
         
         # predict residual (corrections to the blurry upsampled image)
         feat = self.head(x_upscaled)
@@ -174,7 +177,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
 
     if LR_RESIZE_FACTOR != 1.0:
         print(f"Resizing LR Image by factor {LR_RESIZE_FACTOR}")
-        img_LR_var = TF.interpolate(
+        img_LR_var = F.interpolate(
             img_LR_var, 
             scale_factor=LR_RESIZE_FACTOR, 
             mode='bicubic', 
@@ -207,8 +210,6 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
     # create internal dataset from the specific LR image
     zssr_ds = ZSSRInternalDataset(img_LR_var, num_samples=CROPS_PER_EPOCH)
     zssr_loader = DataLoader(zssr_ds, batch_size=16, shuffle=True)
-
-    loss_history = []
     
     # Training Loop
     for epoch in range(EPOCHS):
@@ -221,16 +222,17 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
             output = model_zssr(lr_batch)
             
             # L1 loss like in the original paper
-            loss = TF.l1_loss(output, hr_batch)
+            loss = F.l1_loss(output, hr_batch)
             
             optimizer_zssr.zero_grad()
             loss.backward()
             optimizer_zssr.step()
+
+            loss_history.append(loss.item())
             
             epoch_loss += loss.item()
-
+        
         avg_loss = epoch_loss / len(zssr_loader)
-        loss_history.append(avg_loss)
         
         if (epoch + 1) % 5 == 0:
              print(f"epoch {epoch+1}/{EPOCHS}, Loss: {avg_loss:.6f}")
@@ -252,7 +254,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
         target_h, target_w = img_HR_var.shape[2], img_HR_var.shape[3]
         
         if sr_final.shape[2:] != (target_h, target_w):
-            sr_final = TF.interpolate(
+            sr_final = F.interpolate(
                 sr_final, 
                 size=(target_h, target_w), 
                 mode='bicubic', 
@@ -285,35 +287,6 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
 
 
 # Print averaged results
-print("\n" + "="*40)
-print(f"VALIDATION COMPLETE")
-print(f"Processed {len(dataset_psnr)} images.")
-print("="*40)
 print(f"Average PSNR:  {np.mean(dataset_psnr):.2f} dB")
 print(f"Average SSIM:  {np.mean(dataset_ssim):.4f}")
 print(f"Average LPIPS: {np.mean(dataset_lpips):.4f}")
-print("="*40)
-
-
-# Visualisation (Plots only the last image processed) 
-
-plt.figure(figsize=(18, 6))
-
-lr_np = img_LR_var.squeeze(0).permute(1, 2, 0).cpu().numpy()
-
-plt.subplot(1, 3, 1)
-plt.imshow(lr_np)
-plt.title(f"LR Input (x{int(TOTAL_SCALE_FACTOR)} smaller)\n{lr_np.shape}")
-plt.axis('off')
-
-plt.subplot(1, 3, 2)
-plt.imshow(sr_np)
-plt.title(f"ZSSR Output\nPSNR: {dataset_psnr[-1]:.2f} dB")
-plt.axis('off')
-
-plt.subplot(1, 3, 3)
-plt.imshow(gt_np)
-plt.title(f"Ground Truth\n{gt_np.shape}")
-plt.axis('off')
-
-plt.show()

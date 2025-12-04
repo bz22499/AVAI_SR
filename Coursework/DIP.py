@@ -5,7 +5,6 @@
 # %pip install torch torchvision pillow scikit-image lpips matplotlib 
 
 
-# Imports
 
 import torch
 import torch.nn as nn
@@ -43,7 +42,7 @@ LR_RESIZE_FACTOR = 1.0
 NOISE_SIGMA = 50
 
 # limit number of images to process (set to None for all)
-MAX_IMAGES = 5
+MAX_IMAGES = 8
 
 
 # Get LR dataset and HR dataset (for ground truths)
@@ -232,7 +231,6 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
         total_loss.backward()
 
         if i % show_every == 0:
-             # Just print loss, don't accumulate history lists
              print(f'Iter {i:05d} | Loss {total_loss.item():.6f}')
 
         i += 1
@@ -266,7 +264,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
             img_HR_var * 2 - 1
         ).item()
     
-    print(f"Result -> PSNR: {final_psnr:.2f} | SSIM: {final_ssim:.4f} | LPIPS: {final_lpips:.4f}")
+    print(f"PSNR: {final_psnr:.2f} | SSIM: {final_ssim:.4f} | LPIPS: {final_lpips:.4f}")
 
     # Store final metrics for this image into global dataset lists
     dataset_psnr.append(final_psnr)
@@ -275,34 +273,7 @@ for img_idx, (img_LR_tensor, img_HR_tensor) in enumerate(val_loader):
 
 
 # Print averaged results
-print("\n" + "="*40)
-print(f"VALIDATION COMPLETE")
-print(f"Processed {len(dataset_psnr)} images.")
-print("="*40)
+
 print(f"Average PSNR:  {np.mean(dataset_psnr):.2f} dB")
 print(f"Average SSIM:  {np.mean(dataset_ssim):.4f}")
 print(f"Average LPIPS: {np.mean(dataset_lpips):.4f}")
-print("="*40)
-
-
-# Visualisation (Plots only the last image processed) 
-
-fig, ax = plt.subplots(1, 3, figsize=(18, 6))
-
-#display hr
-ax[0].imshow(torch_to_np(img_HR_var).transpose(1, 2, 0))
-ax[0].set_title(f"Ground Truth HR (Last Image)")
-ax[0].axis('off')
-
-# lr
-display_LR = torch.nn.functional.interpolate(img_LR_var, size=img_HR_var.shape[2:], mode='nearest')
-ax[1].imshow(torch_to_np(display_LR).transpose(1, 2, 0))
-ax[1].set_title(f"Input LR")
-ax[1].axis('off')
-
-# DIP output
-ax[2].imshow(out_HR_final.transpose(1, 2, 0))
-ax[2].set_title(f"DIP Output HR\nPSNR: {dataset_psnr[-1]:.2f} dB")
-ax[2].axis('off')
-
-plt.show()
